@@ -2,7 +2,7 @@
 
 A zero-dependency, single-file browser tool for extracting numerical data from plot images. Open `PlotExport.html` directly in any modern browser — no installation, no server required.
 
-**Author:** Paulo Kamimura *(code written with AI assistance)*
+**Author:** ninajpones *(code written with AI assistance)*
 
 ---
 
@@ -158,4 +158,4 @@ A detailed illustrated walkthrough is available in `PlotDigitizer_V2_README_Step
 
 Free to use and modify. If you redistribute or build on this tool, a credit to the original author is appreciated.
 
-> *PlotDigitizer V2 — by Paulo Kamimura. Code written with AI assistance.*
+> *PlotDigitizer V2 — by ninajpones. Code written with AI assistance.*
