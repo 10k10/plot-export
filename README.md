@@ -1,4 +1,4 @@
-# PlotDigitizer V2 — Auto-Trace Curve Extraction
+# PlotExport V2 — Auto-Trace Curve Extraction
 
 A zero-dependency, single-file browser tool for extracting numerical data from plot images. Open `PlotExport.html` directly in any modern browser — no installation, no server required.
 
@@ -150,7 +150,7 @@ Images: **PNG, JPG, BMP, WebP** — loaded via the browser's native `Image` API,
 
 ## Step-by-Step Reference
 
-A detailed illustrated walkthrough is available in `PlotDigitizer_V2_README_StepByStep.pdf` included in this repository.
+A detailed illustrated walkthrough is available in `PlotExport_V2_README_StepByStep.pdf` included in this repository.
 
 ---
 
@@ -158,4 +158,4 @@ A detailed illustrated walkthrough is available in `PlotDigitizer_V2_README_Step
 
 Free to use and modify. If you redistribute or build on this tool, a credit to the original author is appreciated.
 
-> *PlotDigitizer V2 — by ninajpones. Code written with AI assistance.*
+> *PlotExport V2 — by ninajpones. Code written with AI assistance.*
