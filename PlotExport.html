@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlotDigitizer V2 — Auto-Trace Curve Extraction</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg: #0d1117; --panel: #161b22; --border: #30363d;
+  --text: #c9d1d9; --dim: #484f58; --white: #e6edf3;
+  --accent: #f0883e; --red: #f47067; --blue: #58a6ff;
+  --green: #3fb950; --purple: #bc8cff; --yellow: #d29922;
+  --cyan: #39d2c0; --canvas-bg: #1a1a2e; --input: #0d1117;
+  --btn: #21262d; --btn-hov: #30363d;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 13px;
+  overflow: hidden; height: 100vh; display: flex; flex-direction: column;
+  user-select: none;
+}
+
+/* TOOLBAR */
+.toolbar {
+  background: var(--panel); height: 44px; display: flex; align-items: center;
+  padding: 0 8px; gap: 4px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.toolbar .sep { width:1px; height:24px; background:var(--border); margin:0 4px; }
+.toolbar .lbl { color:#8b949e; font-size:11px; margin:0 4px; }
+
+.btn {
+  background: var(--btn); border: none; color: var(--accent);
+  font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 600;
+  padding: 5px 12px; border-radius: 4px; cursor: pointer;
+  transition: background 0.15s; white-space: nowrap;
+}
+.btn:hover { background: var(--btn-hov); }
+.btn.active { color: var(--bg) !important; }
+.btn.active.yellow { background: var(--yellow); }
+.btn.active.green { background: var(--green); }
+.btn.active.purple { background: var(--purple); }
+.btn-yellow { color: var(--yellow); } .btn-green { color: var(--green); }
+.btn-purple { color: var(--purple); } .btn-blue { color: var(--blue); }
+.btn-red { color: var(--red); } .btn-dim { color: #8b949e; }
+.btn-cyan { color: var(--cyan); }
+
+.points-count {
+  margin-left: auto; font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700; color: var(--white);
+}
+
+/* MAIN LAYOUT */
+.main { display: flex; flex: 1; overflow: hidden; }
+.canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--canvas-bg); }
+.canvas-wrap canvas { display: block; }
+
+/* DROP OVERLAY */
+.drop-overlay {
+  position: absolute; inset: 0; background: rgba(88,166,255,0.08);
+  border: 3px dashed var(--blue); display: none; z-index: 50;
+  justify-content: center; align-items: center;
+  font-size: 20px; color: var(--blue); font-weight: 600;
+}
+.drop-overlay.show { display: flex; }
+
+/* SIDE PANEL */
+.side-panel {
+  width: 310px; min-width: 280px; background: var(--panel);
+  border-left: 1px solid var(--border); overflow-y: auto;
+  overflow-x: hidden; flex-shrink: 0;
+}
+.side-panel::-webkit-scrollbar { width: 6px; }
+.side-panel::-webkit-scrollbar-track { background: var(--panel); }
+.side-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.section-label {
+  font-size: 10px; font-weight: 700; color: #8b949e;
+  letter-spacing: 0.5px; padding: 10px 12px 4px; 
+  border-top: 1px solid var(--border); margin-top: 4px;
+}
+.section-label:first-child { border-top: none; margin-top: 0; }
+
+/* MAGNIFIER */
+.mag-wrap { padding: 8px 12px; }
+.mag-canvas { border: 1px solid var(--border); border-radius: 4px; display: block; margin: 0 auto; image-rendering: pixelated; }
+.mag-controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.mag-btn {
+  background: var(--btn); border: none; color: var(--dim);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+  padding: 2px 6px; border-radius: 3px; cursor: pointer;
+}
+.mag-btn:hover { background: var(--btn-hov); }
+.mag-btn.active { color: var(--accent); }
+.color-info { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.color-swatch { width: 20px; height: 16px; border: 1px solid var(--border); border-radius: 2px; }
+.color-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #8b949e; }
+
+.cursor-readout {
+  background: var(--input); border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px 10px; margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 13px;
+  font-weight: 700; color: var(--white);
+}
+.cursor-pixel { font-size: 10px; color: var(--dim); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+
+/* CALIBRATION */
+.cal-frame {
+  border: 1px solid var(--border); border-radius: 6px;
+  margin: 4px 10px; padding: 8px;
+}
+.cal-title { font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+.cal-row { display: flex; align-items: center; gap: 4px; margin: 4px 0; }
+.cal-row input {
+  width: 80px; background: var(--input); border: 1px solid var(--border);
+  color: var(--accent); font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; padding: 3px 6px; border-radius: 3px; outline: none;
+}
+.cal-row input:focus { border-color: var(--accent); }
+.cal-row .px-label { font-size: 10px; color: #8b949e; font-family: 'JetBrains Mono', monospace; min-width: 50px; }
+.cal-check { display: flex; align-items: center; gap: 4px; margin: 4px 0; }
+.cal-check input[type=checkbox] { accent-color: var(--accent); }
+.cal-check label { font-size: 11px; color: var(--text); cursor: pointer; }
+.cal-status { font-size: 11px; font-weight: 700; padding: 4px 12px; }
+
+/* TRACE */
+.trace-frame {
+  border: 1px solid var(--border); border-radius: 6px;
+  margin: 4px 10px; padding: 8px;
+}
+.trace-title { font-size: 11px; font-weight: 700; color: var(--purple); margin-bottom: 6px; }
+.trace-color-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; flex-wrap: wrap; }
+.trace-swatch {
+  width: 28px; height: 20px; border: 2px solid var(--border);
+  border-radius: 3px; cursor: pointer;
+}
+.trace-rgb { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--dim); margin: 2px 0; }
+.slider-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.slider-row label { font-size: 11px; color: var(--white); min-width: 90px; }
+.slider-row input[type=range] {
+  flex: 1; accent-color: var(--purple); height: 4px;
+}
+.slider-row .val { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--white); min-width: 24px; text-align: right; }
+.trace-btns { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+.trace-status { font-size: 11px; color: var(--text); font-style: italic; margin-top: 6px; line-height: 1.5; padding: 6px 8px; background: rgba(0,0,0,0.2); border-radius: 4px; white-space: pre-wrap; min-height: 40px; }
+
+/* DATASETS */
+.ds-row { display: flex; align-items: center; gap: 6px; padding: 4px 12px; }
+.ds-select {
+  background: var(--input); border: 1px solid var(--border); color: var(--text);
+  font-size: 12px; padding: 4px 8px; border-radius: 3px; flex: 1;
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* DATA TABLE */
+.data-table-wrap { padding: 4px 10px; max-height: 280px; overflow-y: auto; }
+.data-table {
+  width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+}
+.data-table th {
+  background: var(--btn); color: var(--white); font-weight: 700;
+  padding: 5px 8px; text-align: center; position: sticky; top: 0;
+  font-size: 11px; border-bottom: 2px solid var(--border);
+}
+.data-table td { padding: 3px 8px; text-align: center; border-bottom: 1px solid var(--border); color: var(--text); }
+.data-table tr:hover td { background: var(--btn); }
+.data-table tr.selected td { background: rgba(88,166,255,0.15); }
+.pt-btns { display: flex; gap: 4px; padding: 4px 12px; }
+
+/* EXPORT */
+.export-btns { display: flex; gap: 4px; padding: 8px 12px; flex-wrap: wrap; }
+
+/* STATUSBAR */
+.statusbar {
+  background: var(--panel); height: 24px; display: flex; align-items: center;
+  padding: 0 12px; border-top: 1px solid var(--border); flex-shrink: 0;
+  font-size: 11px;
+}
+.statusbar .status-text { color: var(--dim); flex: 1; }
+.statusbar .zoom-text { color: var(--dim); font-family: 'JetBrains Mono', monospace; }
+
+/* HELP MODAL */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: none; justify-content: center; align-items: center; z-index: 100;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  max-width: 520px; max-height: 80vh; overflow-y: auto; padding: 24px;
+}
+.modal h2 { color: var(--accent); font-size: 16px; margin-bottom: 12px; }
+.modal pre { color: var(--text); font-size: 12px; line-height: 1.6; white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; }
+.modal .close-btn { margin-top: 16px; }
+
+/* Empty state */
+.empty-state {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  justify-content: center; align-items: center; color: var(--dim);
+  pointer-events: none;
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.empty-state .msg { font-size: 16px; }
+.empty-state .sub { font-size: 12px; margin-top: 4px; opacity: 0.6; }
+</style>
+</head>
+<body>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <button class="btn" style="color:var(--accent)" onclick="loadImage()">📂 Open</button>
+  <div class="sep"></div>
+  <span class="lbl">Mode:</span>
+  <button class="btn btn-yellow active yellow" id="btnCal" onclick="setMode('calibrate')">⊞ Calibrate</button>
+  <button class="btn btn-green" id="btnDig" onclick="setMode('digitize')">✚ Digitize</button>
+  <button class="btn btn-purple" id="btnTrace" onclick="setMode('trace_draw')">🖊 Auto-Trace</button>
+  <div class="sep"></div>
+  <button class="btn btn-dim" onclick="zoomStep(1.25)">🔍+</button>
+  <button class="btn btn-dim" onclick="zoomStep(0.8)">🔍−</button>
+  <button class="btn btn-dim" onclick="zoomFit()">Fit</button>
+  <div class="sep"></div>
+  <button class="btn btn-blue" onclick="exportCSV()">💾 CSV</button>
+  <button class="btn btn-dim" onclick="exportTXT()">TXT</button>
+  <button class="btn btn-cyan" onclick="exportClipboard()">📋 Copy</button>
+  <div class="sep"></div>
+  <button class="btn btn-dim" onclick="saveSession()">Save</button>
+  <button class="btn btn-dim" onclick="loadSession()">Load</button>
+  <div class="sep"></div>
+  <button class="btn btn-dim" onclick="showHelp()">?</button>
+  <span class="points-count" id="pointsCount">Points: 0 / 0</span>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- CANVAS -->
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="mainCanvas"></canvas>
+    <div class="drop-overlay" id="dropOverlay">📂 Drop image here</div>
+    <div class="empty-state" id="emptyState">
+      <div class="icon">📈</div>
+      <div class="msg">Open an image or drag & drop</div>
+      <div class="sub">Ctrl+O to open • Supports PNG, JPG, BMP, WebP</div>
+    </div>
+  </div>
+
+  <!-- SIDE PANEL -->
+  <div class="side-panel" id="sidePanel">
+    <!-- MAGNIFIER -->
+    <div class="section-label" style="border-top:none;margin-top:0;">MAGNIFIER</div>
+    <div class="mag-wrap">
+      <canvas class="mag-canvas" id="magCanvas" width="180" height="180"></canvas>
+      <div class="mag-controls">
+        <span style="font-size:10px;color:var(--dim)">Mag:</span>
+        <button class="mag-btn" onclick="setMagZoom(4)">4x</button>
+        <button class="mag-btn active" onclick="setMagZoom(6)" id="magBtn6">6x</button>
+        <button class="mag-btn" onclick="setMagZoom(8)">8x</button>
+        <button class="mag-btn" onclick="setMagZoom(12)">12x</button>
+        <button class="mag-btn" onclick="setMagZoom(16)">16x</button>
+      </div>
+      <div class="color-info">
+        <div class="color-swatch" id="magSwatch" style="background:#808080"></div>
+        <span class="color-label" id="magColorLbl">RGB: —</span>
+      </div>
+      <div class="cursor-readout" id="cursorReadout">X: —&nbsp;&nbsp;&nbsp;&nbsp;Y: —</div>
+      <div class="cursor-pixel" id="cursorPixel">px: —</div>
+    </div>
+
+    <!-- CALIBRATION -->
+    <div class="section-label">AXIS CALIBRATION</div>
+    <!-- X axis -->
+    <div class="cal-frame">
+      <div class="cal-title" style="color:var(--accent)">X Axis</div>
+      <div class="cal-check">
+        <input type="checkbox" id="xLog" onchange="onLogChange()">
+        <label for="xLog">Logarithmic</label>
+      </div>
+      <div class="cal-row">
+        <button class="btn btn-yellow" style="font-size:11px;padding:3px 8px" onclick="startPick('x1')">Pick X₁</button>
+        <span style="font-size:10px;color:var(--dim)">Val:</span>
+        <input type="text" id="entryX1" value="0">
+        <span class="px-label" id="lblX1px">—</span>
+      </div>
+      <div class="cal-row">
+        <button class="btn btn-yellow" style="font-size:11px;padding:3px 8px" onclick="startPick('x2')">Pick X₂</button>
+        <span style="font-size:10px;color:var(--dim)">Val:</span>
+        <input type="text" id="entryX2" value="100">
+        <span class="px-label" id="lblX2px">—</span>
+      </div>
+      <button class="btn btn-green" style="width:100%;margin-top:4px" onclick="applyCal('x')">✓ Apply X</button>
+    </div>
+    <!-- Y axis -->
+    <div class="cal-frame">
+      <div class="cal-title" style="color:var(--blue)">Y Axis</div>
+      <div class="cal-check">
+        <input type="checkbox" id="yLog" onchange="onLogChange()">
+        <label for="yLog">Logarithmic</label>
+      </div>
+      <div class="cal-row">
+        <button class="btn" style="color:var(--blue);font-size:11px;padding:3px 8px" onclick="startPick('y1')">Pick Y₁</button>
+        <span style="font-size:10px;color:var(--dim)">Val:</span>
+        <input type="text" id="entryY1" value="0" style="color:var(--blue)">
+        <span class="px-label" id="lblY1px">—</span>
+      </div>
+      <div class="cal-row">
+        <button class="btn" style="color:var(--blue);font-size:11px;padding:3px 8px" onclick="startPick('y2')">Pick Y₂</button>
+        <span style="font-size:10px;color:var(--dim)">Val:</span>
+        <input type="text" id="entryY2" value="100" style="color:var(--blue)">
+        <span class="px-label" id="lblY2px">—</span>
+      </div>
+      <button class="btn btn-green" style="width:100%;margin-top:4px" onclick="applyCal('y')">✓ Apply Y</button>
+    </div>
+    <div class="cal-status" id="calStatus" style="color:var(--yellow)">⚠ Not calibrated</div>
+
+    <!-- AUTO-TRACE -->
+    <div class="section-label">AUTO-TRACE</div>
+    <div class="trace-frame">
+      <div class="trace-title">Trace Settings</div>
+      <div class="trace-color-row">
+        <span style="font-size:11px">Curve Color:</span>
+        <div class="trace-swatch" id="traceSwatch" style="background:#ff0000" onclick="pickColorFromChooser()"></div>
+        <button class="btn btn-purple" style="font-size:10px;padding:2px 8px" onclick="setMode('trace_pick_color')">Pick from Image</button>
+      </div>
+      <div class="trace-rgb" id="traceRgb">RGB: (255, 0, 0)</div>
+      <div class="slider-row">
+        <label>Pen Width:</label>
+        <input type="range" id="penWidth" min="10" max="80" value="30" oninput="document.getElementById('penWidthVal').textContent=this.value">
+        <span class="val" id="penWidthVal">30</span>
+      </div>
+      <div class="slider-row">
+        <label>Color Tol.:</label>
+        <input type="range" id="colorTol" min="5" max="100" value="35" oninput="document.getElementById('colorTolVal').textContent=this.value">
+        <span class="val" id="colorTolVal">35</span>
+      </div>
+      <div class="slider-row">
+        <label>Smoothing:</label>
+        <input type="range" id="smoothWin" min="1" max="20" value="5" oninput="document.getElementById('smoothVal').textContent=this.value">
+        <span class="val" id="smoothVal">5</span>
+      </div>
+      <div class="trace-btns">
+        <button class="btn btn-purple" style="font-size:11px" onclick="setMode('trace_draw')">🖊 Draw</button>
+        <button class="btn btn-green" style="font-size:11px" onclick="runTrace()">⚡ Trace!</button>
+        <button class="btn btn-green" style="font-size:11px" onclick="acceptTrace()">✓ Accept</button>
+        <button class="btn btn-red" style="font-size:11px" onclick="clearTrace()">✗ Clear</button>
+      </div>
+      <div class="trace-status" id="traceStatus">Draw a path over the curve, then Trace!</div>
+    </div>
+
+    <!-- DATASETS -->
+    <div class="section-label">DATASETS</div>
+    <div class="ds-row">
+      <select class="ds-select" id="dsSelect" onchange="onDsSelect()">
+        <option>Dataset 1</option>
+      </select>
+      <button class="btn btn-green" style="font-size:11px;padding:3px 8px" onclick="addDataset()">+</button>
+      <button class="btn btn-dim" style="font-size:10px;padding:3px 8px" onclick="renameDataset()">Rename</button>
+    </div>
+
+    <!-- DATA POINTS -->
+    <div class="section-label">DATA POINTS</div>
+    <div class="data-table-wrap" id="tableWrap">
+      <table class="data-table">
+        <thead><tr><th>#</th><th>X</th><th>Y</th></tr></thead>
+        <tbody id="dataBody"></tbody>
+      </table>
+    </div>
+    <div class="pt-btns">
+      <button class="btn btn-red" style="font-size:10px" onclick="delSelected()">Delete</button>
+      <button class="btn btn-red" style="font-size:10px" onclick="clearPoints()">Clear All</button>
+      <button class="btn btn-dim" style="font-size:10px" onclick="sortPoints()">Sort by X</button>
+    </div>
+
+    <!-- EXPORT -->
+    <div class="section-label">EXPORT</div>
+    <div class="export-btns">
+      <button class="btn btn-blue" onclick="exportCSV()">📄 CSV</button>
+      <button class="btn btn-dim" onclick="exportTXT()">📄 TXT</button>
+      <button class="btn" style="color:var(--cyan)" onclick="exportClipboard()">📋 Copy to Clipboard</button>
+      <button class="btn btn-green" onclick="saveSession()">💾 Save Session</button>
+      <button class="btn btn-dim" onclick="loadSession()">📂 Load Session</button>
+    </div>
+    <div style="height:40px"></div>
+  </div>
+</div>
+
+<!-- STATUSBAR -->
+<div class="statusbar">
+  <span class="status-text" id="statusText">Ready — Open an image or drag & drop</span>
+  <span class="zoom-text" id="zoomText">Zoom: 100%</span>
+</div>
+
+<!-- HELP MODAL -->
+<div class="modal-overlay" id="helpModal">
+  <div class="modal">
+    <h2>PlotDigitizer V2 — How to Use</h2>
+    <pre>
+▸ QUICK START (Auto-Trace)
+  1. Open Image (Ctrl+O) or drag & drop
+  2. Calibrate X: Pick X₁ + X₂, enter values, Apply
+     (check Logarithmic for log axes)
+  3. Calibrate Y: same process
+  4. Switch to Auto-Trace mode (🖊)
+  5. Click "Pick from Image" → click on the curve line
+  6. Draw roughly over the curve (thick highlight pen)
+  7. Click ⚡ Trace! → algorithm finds the curve
+  8. Click ✓ Accept → points added to dataset
+  9. Export CSV
+
+▸ AUTO-TRACE TIPS
+  • Pick color: Click directly on the curve LINE
+  • Pen width: Wider = more forgiving, but may pick
+    up nearby gridlines. Start with 30px.
+  • Color tolerance: Higher = more matches. If you get
+    noise, lower it. If curve is missed, raise it.
+  • For log-log SOA plots: grid lines are usually gray,
+    curve is colored → good color contrast!
+  • Multiple curves: Add a new Dataset, pick new color,
+    draw over next curve.
+
+▸ MANUAL DIGITIZE
+  • Switch to Digitize mode, click to add points
+  • Right-click to delete nearest point
+  • Ctrl+Z to undo
+
+▸ NAVIGATION
+  • Scroll wheel: zoom
+  • Middle-click drag: pan
+  • Drag & drop images directly onto canvas
+    </pre>
+    <button class="btn btn-blue close-btn" onclick="document.getElementById('helpModal').classList.remove('show')">Close</button>
+  </div>
+</div>
+
+<!-- HIDDEN INPUTS -->
+<input type="file" id="fileInput" accept="image/*" style="display:none" onchange="handleFile(this.files[0])">
+<input type="file" id="sessionInput" accept=".json" style="display:none" onchange="handleSessionFile(this.files[0])">
+<input type="color" id="colorInput" style="display:none" onchange="handleColorPick(this.value)">
+
+<script>
+// ════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════
+const DS_COLORS = ['#f0883e','#58a6ff','#3fb950','#bc8cff','#f47067','#39d2c0','#d29922','#e6edf3'];
+
+let img = null;       // Image element
+let imgData = null;   // ImageData (pixel array)
+let imgW = 0, imgH = 0;
+let zoom = 1, panX = 0, panY = 0;
+let panning = false, panStart = null;
+
+// Calibration
+const xCal = { p1Px:null, p1Val:null, p2Px:null, p2Val:null, isLog:false };
+const yCal = { p1Px:null, p1Val:null, p2Px:null, p2Val:null, isLog:false };
+// Secondary coords for cal markers
+let x1Py=0, x2Py=0, y1Px=0, y2Px=0;
+let calPick = null; // 'x1','x2','y1','y2'
+
+// Datasets
+let datasets = [{ name:'Dataset 1', color:DS_COLORS[0], points:[] }];
+let activeDs = 0;
+let selectedRow = -1;
+
+// Mode
+let mode = 'calibrate';
+
+// Auto-trace
+let traceTargetRgb = [255, 0, 0];
+let traceStroke = []; // [{x,y}]
+let corridorMask = null; // Uint8Array flat
+let tracePreviewPts = [];
+
+// Magnifier
+let magZoom = 6;
+
+// Canvas refs
+const mainCanvas = document.getElementById('mainCanvas');
+const ctx = mainCanvas.getContext('2d');
+const magCanvas = document.getElementById('magCanvas');
+const magCtx = magCanvas.getContext('2d');
+const canvasWrap = document.getElementById('canvasWrap');
+
+// ════════════════════════════════════════════════════
+// CALIBRATION MATH
+// ════════════════════════════════════════════════════
+function calOk(c) { return c.p1Px!==null && c.p1Val!==null && c.p2Px!==null && c.p2Val!==null; }
+
+function toReal(c, px) {
+  if (!calOk(c)) return null;
+  if (c.p2Px===c.p1Px) return c.p1Val;
+  const f = (px - c.p1Px) / (c.p2Px - c.p1Px);
+  if (c.isLog) {
+    if (c.p1Val<=0 || c.p2Val<=0) return null;
+    const result = Math.pow(10, Math.log10(c.p1Val) + f*(Math.log10(c.p2Val)-Math.log10(c.p1Val)));
+    return isFinite(result) ? result : null;
+  }
+  const result = c.p1Val + f*(c.p2Val - c.p1Val);
+  return isFinite(result) ? result : null;
+}
+
+function toPx(c, val) {
+  if (!calOk(c)) return null;
+  let f;
+  if (c.isLog) {
+    if (val<=0||c.p1Val<=0||c.p2Val<=0) return null;
+    const l1=Math.log10(c.p1Val), l2=Math.log10(c.p2Val);
+    if (l2===l1) return c.p1Px;
+    f = (Math.log10(val)-l1)/(l2-l1);
+  } else {
+    const d = c.p2Val - c.p1Val;
+    if (d===0) return c.p1Px;
+    f = (val - c.p1Val)/d;
+  }
+  return c.p1Px + f*(c.p2Px - c.p1Px);
+}
+
+// ════════════════════════════════════════════════════
+// CANVAS SETUP & RESIZE
+// ════════════════════════════════════════════════════
+function resizeCanvas() {
+  mainCanvas.width = canvasWrap.clientWidth;
+  mainCanvas.height = canvasWrap.clientHeight;
+  render();
+}
+window.addEventListener('resize', resizeCanvas);
+setTimeout(resizeCanvas, 50);
+
+// ════════════════════════════════════════════════════
+// COORD TRANSFORMS
+// ════════════════════════════════════════════════════
+function s2i(sx, sy) { return [(sx-panX)/zoom, (sy-panY)/zoom]; }
+function i2s(ix, iy) { return [ix*zoom+panX, iy*zoom+panY]; }
+
+// ════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════
+function render() {
+  ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+  const es = document.getElementById('emptyState');
+  if (!img) { es.style.display='flex'; return; }
+  es.style.display='none';
+
+  // Draw image
+  const nw = Math.max(1, imgW*zoom), nh = Math.max(1, imgH*zoom);
+  ctx.drawImage(img, panX, panY, nw, nh);
+
+  // Trace overlay
+  drawTraceOverlay();
+  // Cal markers
+  drawCalMarkers();
+  // Data points
+  drawPoints();
+  // Trace preview
+  drawTracePreview();
+}
+
+function drawCalMarkers() {
+  const markers = [];
+  if (xCal.p1Px!==null) markers.push({ix:xCal.p1Px, iy:x1Py, label:'X₁', color:'#f0883e'});
+  if (xCal.p2Px!==null) markers.push({ix:xCal.p2Px, iy:x2Py, label:'X₂', color:'#f0883e'});
+  if (yCal.p1Px!==null) markers.push({ix:y1Px, iy:yCal.p1Px, label:'Y₁', color:'#58a6ff'});
+  if (yCal.p2Px!==null) markers.push({ix:y2Px, iy:yCal.p2Px, label:'Y₂', color:'#58a6ff'});
+
+  for (const m of markers) {
+    const [sx, sy] = i2s(m.ix, m.iy);
+    const r = 6;
+    ctx.strokeStyle = m.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx-r-4, sy); ctx.lineTo(sx+r+4, sy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx, sy-r-4); ctx.lineTo(sx, sy+r+4); ctx.stroke();
+    ctx.font = '10px "DM Sans"'; ctx.fillStyle = m.color;
+    ctx.fillText(m.label, sx+r+6, sy-4);
+  }
+}
+
+function drawPoints() {
+  for (const ds of datasets) {
+    const c = ds.color, pts = ds.points;
+    for (let i = 0; i < pts.length; i++) {
+      const [sx, sy] = i2s(pts[i][0], pts[i][1]);
+      // Connecting line first (behind point)
+      if (i > 0) {
+        const [sx0, sy0] = i2s(pts[i-1][0], pts[i-1][1]);
+        ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
+        ctx.beginPath(); ctx.moveTo(sx0,sy0); ctx.lineTo(sx,sy); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // Point dot — larger with high-contrast outline
+      ctx.fillStyle = c; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      // Dark inner outline for extra contrast
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(sx, sy, 6.5, 0, Math.PI*2); ctx.stroke();
+    }
+  }
+}
+
+function drawTraceOverlay() {
+  if (traceStroke.length < 2) return;
+  const pw = parseInt(document.getElementById('penWidth').value) * zoom;
+  ctx.strokeStyle = 'rgba(188,140,255,0.25)';
+  ctx.lineWidth = pw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  const [sx0, sy0] = i2s(traceStroke[0].x, traceStroke[0].y);
+  ctx.moveTo(sx0, sy0);
+  for (let i=1; i<traceStroke.length; i++) {
+    const [sx, sy] = i2s(traceStroke[i].x, traceStroke[i].y);
+    ctx.lineTo(sx, sy);
+  }
+  ctx.stroke();
+}
+
+function drawTracePreview() {
+  if (!tracePreviewPts.length) return;
+  for (let i=0; i<tracePreviewPts.length; i++) {
+    const [sx, sy] = i2s(tracePreviewPts[i][0], tracePreviewPts[i][1]);
+    if (i > 0) {
+      const [sx0, sy0] = i2s(tracePreviewPts[i-1][0], tracePreviewPts[i-1][1]);
+      ctx.strokeStyle = '#39d2c0'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx0,sy0); ctx.lineTo(sx,sy); ctx.stroke();
+    }
+    ctx.fillStyle = '#39d2c0'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  }
+}
+
+// ════════════════════════════════════════════════════
+// IMAGE LOADING
+// ════════════════════════════════════════════════════
+function loadImage() { document.getElementById('fileInput').click(); }
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const newImg = new Image();
+    newImg.onload = function() {
+      img = newImg;
+      imgW = img.width; imgH = img.height;
+      // Get pixel data
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = imgW; tempCanvas.height = imgH;
+      const tmpCtx = tempCanvas.getContext('2d');
+      tmpCtx.drawImage(img, 0, 0);
+      imgData = tmpCtx.getImageData(0, 0, imgW, imgH);
+      zoomFit();
+      setStatus(`Loaded: ${file.name} (${imgW}×${imgH})`);
+    };
+    newImg.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Drag and drop
+canvasWrap.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('dropOverlay').classList.add('show'); });
+canvasWrap.addEventListener('dragleave', () => { document.getElementById('dropOverlay').classList.remove('show'); });
+canvasWrap.addEventListener('drop', e => {
+  e.preventDefault(); document.getElementById('dropOverlay').classList.remove('show');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+// ════════════════════════════════════════════════════
+// ZOOM & PAN
+// ════════════════════════════════════════════════════
+function zoomAt(sx, sy, factor) {
+  const oz = zoom;
+  zoom = Math.max(0.05, Math.min(zoom*factor, 20));
+  const r = zoom/oz;
+  panX = sx - (sx-panX)*r;
+  panY = sy - (sy-panY)*r;
+  render();
+  document.getElementById('zoomText').textContent = `Zoom: ${(zoom*100).toFixed(0)}%`;
+}
+function zoomStep(f) { zoomAt(mainCanvas.width/2, mainCanvas.height/2, f); }
+function zoomFit() {
+  if (!img) return;
+  const cw = mainCanvas.width, ch = mainCanvas.height;
+  zoom = Math.min(cw/imgW, ch/imgH) * 0.95;
+  panX = (cw - imgW*zoom)/2;
+  panY = (ch - imgH*zoom)/2;
+  render();
+  document.getElementById('zoomText').textContent = `Zoom: ${(zoom*100).toFixed(0)}%`;
+}
+
+mainCanvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomAt(e.offsetX, e.offsetY, e.deltaY < 0 ? 1.15 : 1/1.15);
+});
+
+mainCanvas.addEventListener('mousedown', e => {
+  if (e.button === 1) { // Middle click
+    e.preventDefault(); panning = true; panStart = {x:e.offsetX, y:e.offsetY};
+    mainCanvas.style.cursor = 'grabbing'; return;
+  }
+  if (e.button === 0) onCanvasClick(e);
+});
+mainCanvas.addEventListener('mousemove', e => {
+  if (panning && panStart) {
+    panX += e.offsetX - panStart.x;
+    panY += e.offsetY - panStart.y;
+    panStart = {x:e.offsetX, y:e.offsetY};
+    render(); return;
+  }
+  onCanvasMotion(e);
+  if (mode==='trace_draw' && traceStroke.length > 0 && e.buttons === 1) {
+    onCanvasDrag(e);
+  }
+});
+mainCanvas.addEventListener('mouseup', e => {
+  if (e.button === 1) { panning = false; panStart = null; mainCanvas.style.cursor = 'crosshair'; return; }
+  if (e.button === 0 && mode==='trace_draw' && traceStroke.length > 5) {
+    buildCorridorMask();
+    setStatus(`Path drawn (${traceStroke.length} points). Click ⚡ Trace!`);
+    document.getElementById('traceStatus').textContent = `Path: ${traceStroke.length} points. Click ⚡ Trace! to detect curve.`;
+  }
+});
+mainCanvas.addEventListener('contextmenu', e => { e.preventDefault(); onCanvasRClick(e); });
+
+// ════════════════════════════════════════════════════
+// CANVAS EVENTS
+// ════════════════════════════════════════════════════
+function onCanvasClick(e) {
+  if (!img) {
+    if (calPick) setStatus('⚠ Load an image first, then pick calibration points');
+    return;
+  }
+  const [ix, iy] = s2i(e.offsetX, e.offsetY);
+
+  if (calPick) { doCalPick(ix, iy); return; }
+  if (mode === 'trace_pick_color') { sampleColor(ix, iy); return; }
+  if (mode === 'trace_draw') { traceStroke = [{x:ix, y:iy}]; return; }
+  if (mode === 'digitize') {
+    if (!calOk(xCal) || !calOk(yCal)) {
+      const missing = [];
+      if (!calOk(xCal)) missing.push('X');
+      if (!calOk(yCal)) missing.push('Y');
+      setStatus(`⚠ Calibrate ${missing.join(' and ')} axis first! (Pick points + Apply)`);
+      return;
+    }
+    const ds = datasets[activeDs];
+    ds.points.push([ix, iy]);
+    updateTree(); render(); updateCount();
+    const rx = toReal(xCal, ix), ry = toReal(yCal, iy);
+    setStatus(`Added #${ds.points.length}: (${fmtVal(rx)}, ${fmtVal(ry)})`);
+  }
+}
+
+function onCanvasDrag(e) {
+  if (!img || mode !== 'trace_draw') return;
+  const [ix, iy] = s2i(e.offsetX, e.offsetY);
+  traceStroke.push({x:ix, y:iy});
+  // Incremental draw
+  if (traceStroke.length >= 2) {
+    const pw = parseInt(document.getElementById('penWidth').value) * zoom;
+    const prev = traceStroke[traceStroke.length-2];
+    const [sx0, sy0] = i2s(prev.x, prev.y);
+    const [sx1, sy1] = i2s(ix, iy);
+    ctx.strokeStyle = 'rgba(188,140,255,0.25)';
+    ctx.lineWidth = pw; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx0,sy0); ctx.lineTo(sx1,sy1); ctx.stroke();
+  }
+}
+
+function onCanvasRClick(e) {
+  if (!img || mode !== 'digitize') return;
+  const [ix, iy] = s2i(e.offsetX, e.offsetY);
+  const ds = datasets[activeDs];
+  if (!ds.points.length) return;
+  let minD = Infinity, mi = -1;
+  for (let i=0; i<ds.points.length; i++) {
+    const d = Math.hypot(ds.points[i][0]-ix, ds.points[i][1]-iy);
+    if (d < minD) { minD = d; mi = i; }
+  }
+  if (minD < 15/zoom) {
+    ds.points.splice(mi, 1);
+    updateTree(); render(); updateCount();
+  }
+}
+
+function onCanvasMotion(e) {
+  if (!img) return;
+  const [ix, iy] = s2i(e.offsetX, e.offsetY);
+  document.getElementById('cursorPixel').textContent = `px: ${ix.toFixed(1)}, ${iy.toFixed(1)}`;
+  // Update cursor readout
+  let xStr = '—', yStr = '—';
+  if (calOk(xCal)) {
+    const rx = toReal(xCal, ix);
+    if (rx !== null) xStr = fmtVal(rx);
+  }
+  if (calOk(yCal)) {
+    const ry = toReal(yCal, iy);
+    if (ry !== null) yStr = fmtVal(ry);
+  }
+  document.getElementById('cursorReadout').innerHTML = `X: ${xStr}&nbsp;&nbsp;&nbsp;&nbsp;Y: ${yStr}`;
+  updateMagnifier(ix, iy);
+  // Color preview in trace_pick_color mode
+  if (mode === 'trace_pick_color' && imgData) {
+    const pxX = Math.round(ix), pxY = Math.round(iy);
+    if (pxX>=0 && pxX<imgW && pxY>=0 && pxY<imgH) {
+      const idx = (pxY*imgW+pxX)*4;
+      const r=imgData.data[idx], g=imgData.data[idx+1], b=imgData.data[idx+2];
+      const hex = `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+      document.getElementById('traceSwatch').style.background = hex;
+      document.getElementById('traceRgb').textContent = `RGB: (${r}, ${g}, ${b})`;
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════
+// MAGNIFIER
+// ════════════════════════════════════════════════════
+function setMagZoom(z) {
+  magZoom = z;
+  document.querySelectorAll('.mag-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === z+'x');
+  });
+}
+
+function updateMagnifier(ix, iy) {
+  if (!img || !imgData) return;
+  const ms = 180, mz = magZoom;
+  const halfR = ms / (2*mz);
+  const x1 = ix - halfR, y1 = iy - halfR;
+  const cx1 = Math.max(0, Math.floor(x1)), cy1 = Math.max(0, Math.floor(y1));
+  const cx2 = Math.min(imgW, Math.ceil(ix+halfR)), cy2 = Math.min(imgH, Math.ceil(iy+halfR));
+  if (cx2<=cx1 || cy2<=cy1) return;
+
+  magCtx.fillStyle = '#1a1a2e';
+  magCtx.fillRect(0, 0, ms, ms);
+
+  // Draw zoomed region
+  magCtx.imageSmoothingEnabled = false;
+  const srcW = cx2-cx1, srcH = cy2-cy1;
+  const dstX = (cx1-x1)*mz, dstY = (cy1-y1)*mz;
+  magCtx.drawImage(img, cx1, cy1, srcW, srcH, dstX, dstY, srcW*mz, srcH*mz);
+
+  // Crosshair
+  const ctr = ms/2;
+  magCtx.strokeStyle = '#e6edf3'; magCtx.lineWidth = 1;
+  magCtx.setLineDash([2,2]);
+  magCtx.beginPath(); magCtx.moveTo(0,ctr); magCtx.lineTo(ctr-3,ctr); magCtx.stroke();
+  magCtx.beginPath(); magCtx.moveTo(ctr+3,ctr); magCtx.lineTo(ms,ctr); magCtx.stroke();
+  magCtx.beginPath(); magCtx.moveTo(ctr,0); magCtx.lineTo(ctr,ctr-3); magCtx.stroke();
+  magCtx.beginPath(); magCtx.moveTo(ctr,ctr+3); magCtx.lineTo(ctr,ms); magCtx.stroke();
+  magCtx.setLineDash([]);
+  // Center dot
+  magCtx.strokeStyle = '#f47067'; magCtx.lineWidth = 1.5;
+  magCtx.beginPath(); magCtx.arc(ctr,ctr,2,0,Math.PI*2); magCtx.stroke();
+
+  // Grid at high zoom
+  if (mz >= 8) {
+    magCtx.strokeStyle = 'rgba(48,54,61,0.5)'; magCtx.lineWidth = 0.5;
+    for (let gx=0; gx<ms; gx+=mz) { magCtx.beginPath(); magCtx.moveTo(gx,0); magCtx.lineTo(gx,ms); magCtx.stroke(); }
+    for (let gy=0; gy<ms; gy+=mz) { magCtx.beginPath(); magCtx.moveTo(0,gy); magCtx.lineTo(ms,gy); magCtx.stroke(); }
+  }
+
+  // Color readout
+  const pxX = Math.round(ix), pxY = Math.round(iy);
+  if (pxX>=0 && pxX<imgW && pxY>=0 && pxY<imgH) {
+    const idx = (pxY*imgW+pxX)*4;
+    const r=imgData.data[idx], g=imgData.data[idx+1], b=imgData.data[idx+2];
+    const hex = `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+    document.getElementById('magSwatch').style.background = hex;
+    document.getElementById('magColorLbl').textContent = `RGB: (${r},${g},${b}) ${hex}`;
+  }
+}
+
+// ════════════════════════════════════════════════════
+// MODE SWITCHING
+// ════════════════════════════════════════════════════
+function setMode(m) {
+  mode = m;
+  const btnCal = document.getElementById('btnCal');
+  const btnDig = document.getElementById('btnDig');
+  const btnTrace = document.getElementById('btnTrace');
+
+  [btnCal, btnDig, btnTrace].forEach(b => { b.classList.remove('active','yellow','green','purple'); });
+
+  if (m==='calibrate') { btnCal.classList.add('active','yellow'); setStatus('Calibration mode'); mainCanvas.style.cursor='crosshair'; }
+  else if (m==='digitize') { btnDig.classList.add('active','green'); setStatus('Click to add points'); mainCanvas.style.cursor='crosshair'; }
+  else if (m==='trace_draw') { btnTrace.classList.add('active','purple'); setStatus('Draw over the curve with left mouse button'); mainCanvas.style.cursor='crosshair'; }
+  else if (m==='trace_pick_color') { btnTrace.classList.add('active','purple'); setStatus('Click on the curve line to sample its color'); mainCanvas.style.cursor='crosshair'; }
+}
+
+// ════════════════════════════════════════════════════
+// CALIBRATION
+// ════════════════════════════════════════════════════
+function startPick(which) {
+  if (!img) { setStatus('⚠ Load an image first before calibrating'); return; }
+  calPick = which;
+  // Set mode without overwriting status
+  mode = 'calibrate';
+  const btnCal = document.getElementById('btnCal');
+  const btnDig = document.getElementById('btnDig');
+  const btnTrace = document.getElementById('btnTrace');
+  [btnCal, btnDig, btnTrace].forEach(b => { b.classList.remove('active','yellow','green','purple'); });
+  btnCal.classList.add('active','yellow');
+  mainCanvas.style.cursor = 'crosshair';
+  const label = which.replace(/([xy])(\d)/, (m,a,n) => a.toUpperCase() + '₁₂'[n-1]);
+  setStatus(`👆 Click on the graph image to place ${label}`);
+}
+
+function doCalPick(ix, iy) {
+  const w = calPick;
+  if (w==='x1') { xCal.p1Px=ix; x1Py=iy; document.getElementById('lblX1px').textContent=`px:${ix.toFixed(0)}`; }
+  else if (w==='x2') { xCal.p2Px=ix; x2Py=iy; document.getElementById('lblX2px').textContent=`px:${ix.toFixed(0)}`; }
+  else if (w==='y1') { yCal.p1Px=iy; y1Px=ix; document.getElementById('lblY1px').textContent=`px:${iy.toFixed(0)}`; }
+  else if (w==='y2') { yCal.p2Px=iy; y2Px=ix; document.getElementById('lblY2px').textContent=`px:${iy.toFixed(0)}`; }
+  setStatus(`✓ Picked ${w.toUpperCase()} at pixel (${ix.toFixed(0)}, ${iy.toFixed(0)})`);
+  calPick = null;
+  updateCalLabel();
+  render();
+}
+
+function applyCal(axis) {
+  const cal = axis==='x' ? xCal : yCal;
+  const e1id = axis==='x' ? 'entryX1' : 'entryY1';
+  const e2id = axis==='x' ? 'entryX2' : 'entryY2';
+  const logId = axis==='x' ? 'xLog' : 'yLog';
+  const e1 = document.getElementById(e1id);
+  const e2 = document.getElementById(e2id);
+  const logCheck = document.getElementById(logId);
+
+  // Safety checks
+  if (!e1 || !e2) {
+    setStatus(`⚠ BUG: Cannot find input elements ${e1id}/${e2id}`);
+    return;
+  }
+
+  // Check picks were done
+  if (cal.p1Px === null || cal.p2Px === null) {
+    setStatus(`⚠ Pick both ${axis.toUpperCase()} points on the image first (use Pick ${axis.toUpperCase()}₁ and ${axis.toUpperCase()}₂ buttons)`);
+    updateCalLabel();
+    return;
+  }
+
+  const raw1 = e1.value.trim();
+  const raw2 = e2.value.trim();
+  const v1 = parseFloat(raw1);
+  const v2 = parseFloat(raw2);
+
+  if (raw1 === '' || raw2 === '' || isNaN(v1) || isNaN(v2)) {
+    setStatus(`⚠ Invalid ${axis.toUpperCase()} values — enter numbers (got "${raw1}" and "${raw2}")`);
+    updateCalLabel();
+    return;
+  }
+
+  const isLog = logCheck ? logCheck.checked : false;
+  if (isLog && (v1 <= 0 || v2 <= 0)) {
+    setStatus(`⚠ Log axis needs values > 0 (got ${v1}, ${v2})`);
+    updateCalLabel();
+    return;
+  }
+
+  // SET VALUES
+  cal.p1Val = v1;
+  cal.p2Val = v2;
+  cal.isLog = isLog;
+
+  // Verify
+  if (calOk(cal)) {
+    setStatus(`✓ ${axis.toUpperCase()} calibrated: ${v1} → ${v2} (${isLog ? 'log' : 'linear'})`);
+  } else {
+    // This should never happen at this point, but just in case
+    setStatus(`⚠ ${axis.toUpperCase()} cal state: p1Px=${cal.p1Px}, p2Px=${cal.p2Px}, p1Val=${cal.p1Val}, p2Val=${cal.p2Val}`);
+  }
+
+  updateCalLabel();
+  updateTree();
+  render();
+}
+
+function onLogChange() {
+  xCal.isLog = document.getElementById('xLog').checked;
+  yCal.isLog = document.getElementById('yLog').checked;
+  updateCalLabel(); updateTree();
+}
+
+function updateCalLabel() {
+  const el = document.getElementById('calStatus');
+  const xOk = calOk(xCal), yOk = calOk(yCal);
+  if (xOk && yOk) {
+    el.textContent = '✓ Both axes calibrated — ready to digitize';
+    el.style.color = 'var(--green)';
+    return;
+  }
+  const parts = [];
+  if (!xOk) {
+    const missing = [];
+    if (xCal.p1Px === null) missing.push('Pick X₁');
+    if (xCal.p2Px === null) missing.push('Pick X₂');
+    if (xCal.p1Val === null || xCal.p2Val === null) missing.push('Apply X');
+    parts.push('X: ' + (missing.length ? missing.join(', ') : '??'));
+  }
+  if (!yOk) {
+    const missing = [];
+    if (yCal.p1Px === null) missing.push('Pick Y₁');
+    if (yCal.p2Px === null) missing.push('Pick Y₂');
+    if (yCal.p1Val === null || yCal.p2Val === null) missing.push('Apply Y');
+    parts.push('Y: ' + (missing.length ? missing.join(', ') : '??'));
+  }
+  el.textContent = '⚠ Need: ' + parts.join(' | ');
+  el.style.color = 'var(--yellow)';
+}
+
+// ════════════════════════════════════════════════════
+// AUTO-TRACE
+// ════════════════════════════════════════════════════
+function sampleColor(ix, iy) {
+  if (!imgData) return;
+  const pxX = Math.round(ix), pxY = Math.round(iy);
+  if (pxX<0||pxX>=imgW||pxY<0||pxY>=imgH) return;
+  // 3x3 average
+  let rr=0,gg=0,bb=0,count=0;
+  for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++) {
+    const px=pxX+dx, py=pxY+dy;
+    if (px>=0&&px<imgW&&py>=0&&py<imgH) {
+      const idx=(py*imgW+px)*4;
+      rr+=imgData.data[idx]; gg+=imgData.data[idx+1]; bb+=imgData.data[idx+2]; count++;
+    }
+  }
+  traceTargetRgb = [Math.round(rr/count), Math.round(gg/count), Math.round(bb/count)];
+  const hex = `#${traceTargetRgb[0].toString(16).padStart(2,'0')}${traceTargetRgb[1].toString(16).padStart(2,'0')}${traceTargetRgb[2].toString(16).padStart(2,'0')}`;
+  document.getElementById('traceSwatch').style.background = hex;
+  document.getElementById('traceRgb').textContent = `RGB: (${traceTargetRgb.join(', ')})`;
+  setStatus(`Sampled color: (${traceTargetRgb.join(', ')})`);
+  setMode('trace_draw');
+}
+
+function pickColorFromChooser() {
+  const ci = document.getElementById('colorInput');
+  const hex = `#${traceTargetRgb[0].toString(16).padStart(2,'0')}${traceTargetRgb[1].toString(16).padStart(2,'0')}${traceTargetRgb[2].toString(16).padStart(2,'0')}`;
+  ci.value = hex;
+  ci.click();
+}
+
+function handleColorPick(hex) {
+  const r = parseInt(hex.substr(1,2),16);
+  const g = parseInt(hex.substr(3,2),16);
+  const b = parseInt(hex.substr(5,2),16);
+  traceTargetRgb = [r,g,b];
+  document.getElementById('traceSwatch').style.background = hex;
+  document.getElementById('traceRgb').textContent = `RGB: (${r}, ${g}, ${b})`;
+}
+
+function buildCorridorMask() {
+  if (!imgData || !traceStroke.length) return;
+  const pw = parseInt(document.getElementById('penWidth').value);
+  // Use offscreen canvas to rasterize the stroke as a mask
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = imgW; maskCanvas.height = imgH;
+  const mCtx = maskCanvas.getContext('2d');
+  mCtx.clearRect(0,0,imgW,imgH);
+  mCtx.strokeStyle = 'white'; mCtx.lineWidth = pw;
+  mCtx.lineCap = 'round'; mCtx.lineJoin = 'round';
+  mCtx.beginPath();
+  mCtx.moveTo(traceStroke[0].x, traceStroke[0].y);
+  for (let i=1; i<traceStroke.length; i++) mCtx.lineTo(traceStroke[i].x, traceStroke[i].y);
+  mCtx.stroke();
+  // Also draw circles for smooth coverage
+  mCtx.fillStyle = 'white';
+  const r = pw/2;
+  for (const pt of traceStroke) {
+    mCtx.beginPath(); mCtx.arc(pt.x, pt.y, r, 0, Math.PI*2); mCtx.fill();
+  }
+  const maskData = mCtx.getImageData(0,0,imgW,imgH);
+  corridorMask = new Uint8Array(imgW*imgH);
+  for (let i=0; i<imgW*imgH; i++) {
+    corridorMask[i] = maskData.data[i*4] > 128 ? 1 : 0;
+  }
+}
+
+function runTrace() {
+  const ts = document.getElementById('traceStatus');
+  if (!imgData) {
+    ts.textContent = '⚠ Load an image first!';
+    ts.style.color = 'var(--red)';
+    setStatus('⚠ Load an image first');
+    return;
+  }
+  if (!corridorMask) {
+    ts.textContent = '⚠ Draw a path first!\n\n1. Click 🖊 Draw\n2. Hold left mouse button and drag over the curve\n3. Then click ⚡ Trace!';
+    ts.style.color = 'var(--yellow)';
+    setStatus('⚠ Draw a path over the curve first (hold left button and drag)');
+    return;
+  }
+  if (!calOk(xCal)||!calOk(yCal)) {
+    ts.textContent = '⚠ Calibrate both axes first!';
+    ts.style.color = 'var(--red)';
+    setStatus('⚠ Calibrate axes first!');
+    return;
+  }
+
+  ts.textContent = 'Tracing...';
+  ts.style.color = 'var(--cyan)';
+  setStatus('Tracing curve...');
+
+  // Use setTimeout to let the UI update before heavy computation
+  setTimeout(() => {
+    const colorTol = parseInt(document.getElementById('colorTol').value);
+    const smoothWindow = parseInt(document.getElementById('smoothWin').value);
+    const minColPixels = 2;
+
+    const [tr,tg,tb] = traceTargetRgb;
+    const d = imgData.data;
+
+    // Find x bounds of corridor
+    let xMin=imgW, xMax=0;
+    for (let y=0; y<imgH; y++) for (let x=0; x<imgW; x++) {
+      if (corridorMask[y*imgW+x]) { if (x<xMin) xMin=x; if (x>xMax) xMax=x; }
+    }
+    if (xMin>xMax) {
+      ts.textContent = '⚠ Corridor is empty — redraw the path';
+      ts.style.color = 'var(--red)';
+      setStatus('⚠ No corridor found');
+      return;
+    }
+
+    const rawPoints = [];
+
+    for (let x=xMin; x<=xMax; x++) {
+      let sumY=0, sumW=0, count=0;
+      for (let y=0; y<imgH; y++) {
+        if (!corridorMask[y*imgW+x]) continue;
+        const idx = (y*imgW+x)*4;
+        const dr=d[idx]-tr, dg=d[idx+1]-tg, db=d[idx+2]-tb;
+        const dist = Math.sqrt(dr*dr+dg*dg+db*db);
+        if (dist < colorTol) {
+          const w = 1.0/(dist+1.0);
+          sumY += y*w; sumW += w; count++;
+        }
+      }
+      if (count >= minColPixels) {
+        rawPoints.push([x, sumY/sumW]);
+      }
+    }
+
+    if (!rawPoints.length) {
+      ts.innerHTML = '⚠ No curve detected!<br><br>Try:<br>• Increase Color Tolerance<br>• Re-pick the curve color<br>• Re-draw path closer to curve';
+      ts.style.color = 'var(--yellow)';
+      setStatus('⚠ No curve detected — adjust tolerance or re-pick color');
+      return;
+    }
+
+    // Sort by x
+    rawPoints.sort((a,b) => a[0]-b[0]);
+
+    // Smooth
+    let smoothed = rawPoints;
+    if (smoothWindow > 1 && rawPoints.length > smoothWindow) {
+      const hw = Math.floor(smoothWindow/2);
+      const ys = rawPoints.map(p=>p[1]);
+      const ysPad = [...Array(hw).fill(ys[0]), ...ys, ...Array(hw).fill(ys[ys.length-1])];
+      const ysSmooth = [];
+      for (let i=0; i<ys.length; i++) {
+        let sum=0;
+        for (let j=i; j<i+smoothWindow; j++) sum+=ysPad[j];
+        ysSmooth.push(sum/smoothWindow);
+      }
+      smoothed = rawPoints.map((p,i)=>[p[0], ysSmooth[i]]);
+    }
+
+    // Subsample to ~200 points
+    if (smoothed.length > 300) {
+      const step = Math.floor(smoothed.length/200);
+      const sub = [];
+      for (let i=0; i<smoothed.length; i+=step) sub.push(smoothed[i]);
+      if (sub[sub.length-1] !== smoothed[smoothed.length-1]) sub.push(smoothed[smoothed.length-1]);
+      smoothed = sub;
+    }
+
+    tracePreviewPts = smoothed;
+    render();
+    updateTree();
+    updateCount();
+
+    const xs = smoothed.map(p=>toReal(xCal,p[0])).filter(v=>v!==null);
+    const ys = smoothed.map(p=>toReal(yCal,p[1])).filter(v=>v!==null);
+    ts.style.color = 'var(--green)';
+    ts.textContent = `✓ Detected ${smoothed.length} points\nX: ${fmtVal(Math.min(...xs))} → ${fmtVal(Math.max(...xs))}\nY: ${fmtVal(Math.min(...ys))} → ${fmtVal(Math.max(...ys))}\n\nClick ✓ Accept to commit`;
+    setStatus(`Traced ${smoothed.length} points! Click ✓ Accept.`);
+  }, 10);
+}
+
+function acceptTrace() {
+  if (!tracePreviewPts.length) { setStatus('Nothing to accept — run Trace! first'); return; }
+  const ds = datasets[activeDs];
+  ds.points.push(...tracePreviewPts);
+  const n = tracePreviewPts.length;
+  tracePreviewPts = []; traceStroke = []; corridorMask = null;
+  updateTree(); render(); updateCount();
+  setStatus(`Added ${n} traced points to '${ds.name}'`);
+  document.getElementById('traceStatus').textContent = `✓ ${n} points committed!`;
+}
+
+function clearTrace() {
+  traceStroke = []; tracePreviewPts = []; corridorMask = null;
+  render();
+  updateTree();
+  document.getElementById('traceStatus').textContent = 'Cleared. Draw a new path.';
+  setStatus('Trace cleared');
+}
+
+// ════════════════════════════════════════════════════
+// DATASETS
+// ════════════════════════════════════════════════════
+function addDataset() {
+  const n = datasets.length + 1;
+  datasets.push({ name:`Dataset ${n}`, color:DS_COLORS[(n-1)%DS_COLORS.length], points:[] });
+  updateDsCombo(); activeDs = datasets.length-1;
+  document.getElementById('dsSelect').value = datasets[activeDs].name;
+  updateTree();
+}
+
+function renameDataset() {
+  const name = prompt('Dataset name:', datasets[activeDs].name);
+  if (name && name.trim()) {
+    datasets[activeDs].name = name.trim();
+    updateDsCombo();
+    document.getElementById('dsSelect').value = datasets[activeDs].name;
+  }
+}
+
+function onDsSelect() {
+  const sel = document.getElementById('dsSelect');
+  activeDs = sel.selectedIndex;
+  updateTree(); render();
+}
+
+function updateDsCombo() {
+  const sel = document.getElementById('dsSelect');
+  sel.innerHTML = '';
+  for (const ds of datasets) {
+    const opt = document.createElement('option');
+    opt.textContent = ds.name; sel.appendChild(opt);
+  }
+  sel.selectedIndex = activeDs;
+}
+
+// ════════════════════════════════════════════════════
+// DATA TABLE
+// ════════════════════════════════════════════════════
+function updateTree() {
+  const body = document.getElementById('dataBody');
+  body.innerHTML = '';
+  const ds = datasets[activeDs];
+  
+  // Show committed points
+  for (let i=0; i<ds.points.length; i++) {
+    const [px, py] = ds.points[i];
+    let rx = calOk(xCal) ? toReal(xCal, px) : px;
+    let ry = calOk(yCal) ? toReal(yCal, py) : py;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style="color:var(--dim)">${i+1}</td><td style="color:var(--accent)">${fmtVal(rx)}</td><td style="color:var(--blue)">${fmtVal(ry)}</td>`;
+    tr.onclick = () => { selectedRow=i; highlightRow(); };
+    body.appendChild(tr);
+  }
+  
+  // Also show preview points (from auto-trace, before Accept) in cyan/italic
+  if (tracePreviewPts.length > 0) {
+    const startIdx = ds.points.length;
+    // Show header row for preview
+    const hdr = document.createElement('tr');
+    hdr.innerHTML = `<td colspan="3" style="color:var(--cyan);font-size:10px;font-style:italic;text-align:center;padding:6px 4px;border-bottom:1px solid var(--border)">── Preview: ${tracePreviewPts.length} traced points (click ✓ Accept) ──</td>`;
+    body.appendChild(hdr);
+    // Show up to 50 preview rows (avoid lag with 200+)
+    const showMax = Math.min(tracePreviewPts.length, 50);
+    const step = tracePreviewPts.length <= 50 ? 1 : Math.floor(tracePreviewPts.length / 50);
+    for (let j=0; j<tracePreviewPts.length; j+=step) {
+      if (body.children.length - startIdx - 1 >= 50) break;
+      const [px, py] = tracePreviewPts[j];
+      let rx = calOk(xCal) ? toReal(xCal, px) : px;
+      let ry = calOk(yCal) ? toReal(yCal, py) : py;
+      const tr = document.createElement('tr');
+      tr.style.opacity = '0.6';
+      tr.innerHTML = `<td style="color:var(--dim)">${j+1}</td><td style="color:var(--cyan)">${fmtVal(rx)}</td><td style="color:var(--cyan)">${fmtVal(ry)}</td>`;
+      body.appendChild(tr);
+    }
+    if (tracePreviewPts.length > 50) {
+      const more = document.createElement('tr');
+      more.innerHTML = `<td colspan="3" style="color:var(--dim);font-size:10px;text-align:center">… and ${tracePreviewPts.length - 50} more</td>`;
+      body.appendChild(more);
+    }
+  }
+}
+
+function highlightRow() {
+  document.querySelectorAll('.data-table tr').forEach((tr,i) => {
+    // skip header
+    if (tr.parentElement.tagName==='THEAD') return;
+    tr.classList.toggle('selected', i===selectedRow);
+  });
+}
+
+function delSelected() {
+  if (selectedRow < 0) return;
+  const ds = datasets[activeDs];
+  if (selectedRow < ds.points.length) {
+    ds.points.splice(selectedRow, 1);
+    selectedRow = -1;
+    updateTree(); render(); updateCount();
+  }
+}
+
+function clearPoints() {
+  const ds = datasets[activeDs];
+  if (ds.points.length && confirm(`Delete all ${ds.points.length} points?`)) {
+    ds.points = []; selectedRow=-1;
+    updateTree(); render(); updateCount();
+  }
+}
+
+function sortPoints() {
+  datasets[activeDs].points.sort((a,b) => {
+    const ax = calOk(xCal)?toReal(xCal,a[0]):a[0];
+    const bx = calOk(xCal)?toReal(xCal,b[0]):b[0];
+    return ax-bx;
+  });
+  updateTree(); render();
+}
+
+function updateCount() {
+  const total = datasets.reduce((s,ds)=>s+ds.points.length, 0);
+  const cur = datasets[activeDs].points.length;
+  document.getElementById('pointsCount').textContent = `Points: ${cur} / ${total}`;
+}
+
+// ════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════
+function getData() {
+  const result = [];
+  for (let di=0; di<datasets.length; di++) {
+    const ds = datasets[di];
+    // Collect committed points
+    let allPts = [...ds.points];
+    // If this is the active dataset and there are preview points, include them too
+    if (di === activeDs && tracePreviewPts.length > 0) {
+      allPts = allPts.concat(tracePreviewPts);
+    }
+    if (!allPts.length) continue;
+    const rows = [];
+    for (const [px,py] of allPts) {
+      const rx = calOk(xCal)?toReal(xCal,px):px;
+      const ry = calOk(yCal)?toReal(yCal,py):py;
+      if (rx!==null && ry!==null) rows.push([rx,ry]);
+    }
+    if (rows.length) result.push({name:ds.name, rows});
+  }
+  return result;
+}
+
+function exportCSV() {
+  const data = getData();
+  if (!data.length) {
+    if (tracePreviewPts.length > 0) {
+      setStatus('⚠ Click ✓ Accept first, or use 📋 Copy which includes preview points');
+    } else {
+      setStatus('⚠ No data to export — digitize or trace some points first');
+    }
+    return;
+  }
+  let csv = '';
+  for (const {name,rows} of data) {
+    csv += `# ${name}\nX,Y\n`;
+    for (const [x,y] of rows) csv += `${x},${y}\n`;
+    csv += '\n';
+  }
+  setStatus(`Exporting ${data.reduce((s,d)=>s+d.rows.length,0)} points as CSV...`);
+  downloadFile(csv, 'plotdigitizer_export.csv', 'text/csv');
+  setStatus('✓ Exported CSV');
+}
+
+function exportTXT() {
+  const data = getData();
+  if (!data.length) { setStatus('No data'); return; }
+  let txt = '';
+  for (const {name,rows} of data) {
+    txt += `# ${name}\nX\tY\n`;
+    for (const [x,y] of rows) txt += `${x}\t${y}\n`;
+    txt += '\n';
+  }
+  downloadFile(txt, 'plotdigitizer_export.txt', 'text/plain');
+  setStatus('Exported TXT');
+}
+
+function downloadFile(content, filename, type) {
+  // Method 1: Try Blob + link click (works in most browsers when served)
+  try {
+    const blob = new Blob([content], {type});
+    
+    // Check if navigator.msSaveBlob exists (IE/old Edge)
+    if (navigator.msSaveBlob) {
+      navigator.msSaveBlob(blob, filename);
+      return;
+    }
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    
+    // Use a timeout to ensure the element is in the DOM
+    setTimeout(() => {
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 500);
+    }, 0);
+  } catch(e) {
+    // Method 2: Fallback — open in new window so user can Save As
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write('<pre>' + content.replace(/</g, '&lt;') + '</pre>');
+      win.document.close();
+      win.document.title = filename;
+      setStatus('Download blocked — data opened in new tab. Use Ctrl+S to save.');
+    } else {
+      // Method 3: Last resort — copy to clipboard
+      navigator.clipboard.writeText(content).then(() => {
+        setStatus('Download blocked — data copied to clipboard instead!');
+      }).catch(() => {
+        setStatus('⚠ Cannot download. Try right-click → Save Page As on this file.');
+      });
+    }
+  }
+}
+
+// Also provide a "Copy to Clipboard" export
+function exportClipboard() {
+  const data = getData();
+  if (!data.length) { setStatus('No data'); return; }
+  let csv = '';
+  for (const {name,rows} of data) {
+    csv += `# ${name}\nX,Y\n`;
+    for (const [x,y] of rows) csv += `${x},${y}\n`;
+    csv += '\n';
+  }
+  navigator.clipboard.writeText(csv).then(() => {
+    setStatus(`✓ Copied ${data.reduce((s,d)=>s+d.rows.length,0)} data points to clipboard!`);
+  }).catch(() => {
+    // Fallback: textarea select
+    const ta = document.createElement('textarea');
+    ta.value = csv; ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    setStatus(`✓ Copied to clipboard!`);
+  });
+}
+
+// ════════════════════════════════════════════════════
+// SESSION SAVE/LOAD
+// ════════════════════════════════════════════════════
+function saveSession() {
+  const session = {
+    xCal: {...xCal, x1Py, x2Py}, yCal: {...yCal, y1Px, y2Px},
+    datasets: datasets.map(ds=>({...ds, points:[...ds.points]})),
+    traceTargetRgb,
+    xLog: document.getElementById('xLog').checked,
+    yLog: document.getElementById('yLog').checked,
+  };
+  downloadFile(JSON.stringify(session, null, 2), 'plotdigitizer_session.json', 'application/json');
+  setStatus('Session saved');
+}
+
+function loadSession() { document.getElementById('sessionInput').click(); }
+
+function handleSessionFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const s = JSON.parse(e.target.result);
+      Object.assign(xCal, {p1Px:s.xCal.p1Px, p1Val:s.xCal.p1Val, p2Px:s.xCal.p2Px, p2Val:s.xCal.p2Val, isLog:s.xCal.isLog||false});
+      Object.assign(yCal, {p1Px:s.yCal.p1Px, p1Val:s.yCal.p1Val, p2Px:s.yCal.p2Px, p2Val:s.yCal.p2Val, isLog:s.yCal.isLog||false});
+      x1Py=s.xCal.x1Py||0; x2Py=s.xCal.x2Py||0; y1Px=s.yCal.y1Px||0; y2Px=s.yCal.y2Px||0;
+      document.getElementById('xLog').checked = xCal.isLog;
+      document.getElementById('yLog').checked = yCal.isLog;
+      if (s.datasets) { datasets = s.datasets; activeDs = 0; }
+      if (s.traceTargetRgb) traceTargetRgb = s.traceTargetRgb;
+      updateDsCombo(); updateCalLabel(); updateTree(); updateCount(); render();
+      setStatus('Session loaded (note: open the same image to restore calibration)');
+    } catch(e) { setStatus('⚠ Invalid session file'); }
+  };
+  reader.readAsText(file);
+}
+
+// ════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════
+function fmtVal(v) {
+  if (v===null||v===undefined||Number.isNaN(v)) return '—';
+  const a = Math.abs(v);
+  if (!isFinite(v)) return '∞';
+  if (a>=1000) return v.toFixed(1);
+  if (a>=1) return v.toFixed(3);
+  if (a>=0.01) return v.toFixed(4);
+  if (a===0) return '0';
+  return v.toExponential(2);
+}
+
+function setStatus(t) { document.getElementById('statusText').textContent = t; }
+function showHelp() { document.getElementById('helpModal').classList.add('show'); }
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'o') { e.preventDefault(); loadImage(); }
+  if (e.ctrlKey && e.key === 's') { e.preventDefault(); exportCSV(); }
+  if (e.ctrlKey && e.key === 'z') {
+    e.preventDefault();
+    const ds = datasets[activeDs];
+    if (ds.points.length) { ds.points.pop(); updateTree(); render(); updateCount(); }
+  }
+  if (e.key === 'Escape') { calPick = null; if (mode==='trace_pick_color') setMode('trace_draw'); }
+  if (e.key === 'Delete') { delSelected(); }
+});
+
+// Init
+resizeCanvas();
+</script>
+</body>
+</html>
